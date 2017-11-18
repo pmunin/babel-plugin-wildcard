@@ -37,7 +37,7 @@ export default function (babel) {
                 var files = [];
                 var dir = _path.join(_path.dirname(name), src); // path of the target dir.
 
-                const alreadyGeneratedNests = {};
+                const alreadyInitialized = {};
                 for (var i = node.specifiers.length - 1; i >= 0; i--) {
                     dec = node.specifiers[i];
                     
@@ -164,9 +164,9 @@ export default function (babel) {
                         const nested = parts.slice(0, -1);
                         nested.reduce((prev, curr) => {
                             if (!prev) {
-                                if (alreadyGeneratedNests[curr]) return {
+                                if (alreadyInitialized[curr]) return {
                                     path: curr,
-                                    member: alreadyGeneratedNests[curr],
+                                    member: alreadyInitialized[curr],
                                 };
                                 const member = t.memberExpression(
                                     t.identifier(wildcardName),
@@ -177,15 +177,16 @@ export default function (babel) {
                                     t.assignmentExpression("=", member, t.objectExpression([]))
                                 );
                                 path.insertBefore(setup);
-                                alreadyGeneratedNests[curr] = member;
+                                alreadyInitialized[curr] = member;
                                 return {
                                     path: curr,
                                     member,
                                 };
                             }
-                            if (alreadyGeneratedNests[prev.path + '.' + curr]) return {
-                                path: prev.path + '.' + curr,
-                                member: alreadyGeneratedNests[prev.path + '.' + curr],
+                            const newPath = `${prev.path}.${curr}`;
+                            if (alreadyInitialized[newPath]) return {
+                                path: newPath,
+                                member: alreadyInitialized[newPath],
                             };
                             const member = t.memberExpression(
                                 prev.member,
@@ -196,9 +197,9 @@ export default function (babel) {
                                 t.assignmentExpression("=", member, t.objectExpression([]))
                             );
                             path.insertBefore(setup);
-                            alreadyGeneratedNests[prev.path + '.' + curr] = member;
+                            alreadyInitialized[newPath] = member;
                             return {
-                                path: prev.path + '.' + curr,
+                                path: newPath,
                                 member,
                             };
                         }, null);
