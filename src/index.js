@@ -85,15 +85,12 @@ export default function (babel) {
                     
                     // Will throw if the path does not point to a dir
                     try {
-                        let r = recursiveReaddirSync(dir)
-                            .map(f => f.replace(dir + '/', '')) // Handle non-recursive
-                            .map(f => f.replace(dir, ''));
-                        for (var i = 0; i < r.length; i++) {
-                            // Check extension is of one of the aboves
-                            if (exts.indexOf(_path.extname(r[i]).substring(1)) > -1) {
-                                files.push(r[i]);
-                            }
-                        }
+                        files = recursiveReaddirSync(dir)
+                            .map(file => file.replace(dir + '/', '')) // Handle shallow dependencies
+                            .map(file => file.replace(dir, ''))
+                            .filter(file =>
+                                exts.indexOf(_path.extname(file).substring(1)) > -1
+                            );
                     } catch(e) {
                         console.warn(`Wildcard for ${name} points at ${src} which is not a directory.`);
                         return;
