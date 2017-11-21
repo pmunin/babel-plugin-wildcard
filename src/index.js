@@ -22,12 +22,30 @@ export default function (babel) {
                 let filterNames = []; // e.g. A, B, C
                 
                 // has a /* specifing explicitly to use wildcard
-                let isExplicitWildcard = /\/\*$/.test(src);
+                const wildcardRegex = /\/([^\/]*\*[^\/]*)$/;
+                let isExplicitWildcard = wildcardRegex.test(src);
+                let filenameRegex = new RegExp('.+');
 
                 // in the above case we need to remove the trailing /*
                 if (isExplicitWildcard) {
-                    path.node.source.value = path.node.source.value.substring(0, src.length - 2);
-                    src = path.node.source.value;
+                    const lastSlash = path.node.source.value.lastIndexOf('/');
+                    src = path.node.source.value.substring(0, lastSlash);
+                    const filenameGlob = path.node.source.value.substring(lastSlash + 1);
+                    path.node.source.value = src;
+                    filenameRegex = filenameGlob.replace(/[*\.\(\[\)\]]/g, character => {
+                        switch(character) {
+                            case '*':
+                                return '.*';
+                            case '(':
+                            case ')':
+                            case '[':
+                            case ']':
+                            case '.':
+                                return '\\' + character;
+                        }
+                        return character;
+                    });
+                    filenameRegex = new RegExp(filenameRegex);
                 }
                 
 
@@ -37,7 +55,6 @@ export default function (babel) {
                 var files = [];
                 var dir = _path.join(_path.dirname(name), src); // path of the target dir.
 
-                const alreadyInitialized = {};
                 for (var i = node.specifiers.length - 1; i >= 0; i--) {
                     dec = node.specifiers[i];
                     
@@ -88,14 +105,15 @@ export default function (babel) {
                         files = recursiveReaddirSync(dir)
                             .map(file => file.replace(dir + '/', '')) // Handle shallow dependencies
                             .map(file => file.replace(dir, ''))
-                            .filter(file =>
-                                exts.indexOf(_path.extname(file).substring(1)) > -1
-                            );
+                            .filter(file => {
+                                const {name, ext} = _path.parse(file);
+                                return exts.indexOf(ext.substring(1)) > -1 && filenameRegex.test(name);
+                            });
                     } catch(e) {
                         console.warn(`Wildcard for ${name} points at ${src} which is not a directory.`);
                         return;
                     }
-                    
+
                     // This is quite a mess but it essentially formats the file
                     // extension, and adds it to the object
                     for (var i = 0; i < files.length; i++) {
@@ -106,7 +124,7 @@ export default function (babel) {
                         var file = files[i];
                         var parts = file.split('/')
                             // Set the fancy name based on options
-                            .map(part => getFancyName(part, state.opts))
+                            .map(part => getName(part, state.opts))
                             // Now we're 100% settled on the fancyName, if the user
                             // has provided a filter, we will check it:
                             .map(part => {
@@ -160,52 +178,23 @@ export default function (babel) {
                             t.stringLiteral(name)
                         );
                         
-                        // Initialize the top level directories as an empty objects
+                        // Initialize the top level directory as an empty object
                         const nested = parts.slice(0, -1);
-                        nested.reduce((prev, curr) => {
-                            if (!prev) {
-                                if (alreadyInitialized[curr]) return {
-                                    path: curr,
-                                    member: alreadyInitialized[curr],
-                                };
-                                const member = t.memberExpression(
-                                    t.identifier(wildcardName),
-                                    t.stringLiteral(curr),
-                                    true
-                                );
-                                const setup = t.expressionStatement(
-                                    t.assignmentExpression("=", member, t.objectExpression([]))
-                                );
-                                path.insertBefore(setup);
-                                alreadyInitialized[curr] = member;
-                                return {
-                                    path: curr,
-                                    member,
-                                };
-                            }
-                            const newPath = `${prev.path}.${curr}`;
-                            if (alreadyInitialized[newPath]) return {
-                                path: newPath,
-                                member: alreadyInitialized[newPath],
-                            };
-                            const member = t.memberExpression(
-                                prev.member,
-                                t.stringLiteral(curr),
-                                true
-                            );
-                            const setup = t.expressionStatement(
-                                t.assignmentExpression("=", member, t.objectExpression([]))
+                        nested.forEach(nest => {
+                            let setup = t.expressionStatement(
+                                t.assignmentExpression("=",
+                                    t.memberExpression(
+                                        t.identifier(wildcardName),
+                                        t.stringLiteral(nest),
+                                        true
+                                    )
+                                , t.objectExpression([]))
                             );
                             path.insertBefore(setup);
-                            alreadyInitialized[newPath] = member;
-                            return {
-                                path: newPath,
-                                member,
-                            };
-                        }, null);
+                        });
 
                         // Chain the parts for access
-                        const accessPoint = parts.reduce((prev, curr) => {
+                        const access = parts.reduce((prev, curr) => {
                             if (!prev) return t.memberExpression(
                                 t.identifier(wildcardName),
                                 t.stringLiteral(curr),
@@ -219,11 +208,11 @@ export default function (babel) {
                         }, null);
 
                         // Assign the file to the parts
-                        let setter = t.expressionStatement(
-                            t.assignmentExpression("=", accessPoint, id)
+                        let thing = t.expressionStatement(
+                            t.assignmentExpression("=", access, id)
                         );
                         
-                        path.insertAfter(setter);
+                        path.insertAfter(thing);
                         path.insertAfter(importDeclaration);
                     }
                     
@@ -236,7 +225,7 @@ export default function (babel) {
     };
 }
 
-function getFancyName(originalName, opts) {
+function getName(originalName, opts) {
     // Strip extension
     var fancyName = originalName.replace(/(?!^)\.[^.\s]+$/, "");
 
