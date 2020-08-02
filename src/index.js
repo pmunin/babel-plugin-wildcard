@@ -8,6 +8,7 @@ export default function (babel) {
     return {
         visitor: {
             ImportDeclaration(path, state) {
+                //console.log(path);
                 let node = path.node, dec;
                 var src = path.node.source.value;
 
@@ -50,7 +51,7 @@ export default function (babel) {
                 
 
                 // Get current filename so we can try to determine the folder
-                var name = this.file.parserOpts.sourceFileName || this.file.parserOpts.filename;
+                var name = this.file.opts.parserOpts.sourceFileName || this.file.opts.parserOpts.filename;
 
                 var files = [];
                 var dir = _path.join(_path.dirname(name), src); // path of the target dir.
